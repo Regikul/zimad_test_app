@@ -14,7 +14,7 @@
 start(_StartType, _StartArgs) ->
     Dispatch = cowboy_router:compile([
         {'_', [
-            {"/", zm_rest_h, []}
+            {'_', zm_rest_h, []}
         ]}
     ]),
     {ok, _} = cowboy:start_clear(?HTTP_LISTENER, [{port, 8080}], #{
