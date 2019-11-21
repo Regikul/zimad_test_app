@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc zimad top level supervisor.
+%% @doc webservice top level supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 
--module(zimad_sup).
+-module(webservice_sup).
 
 -behaviour(supervisor).
 

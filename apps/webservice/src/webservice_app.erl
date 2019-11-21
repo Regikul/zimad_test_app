@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc zimad public API
+%% @doc webservice public API
 %% @end
 %%%-------------------------------------------------------------------
 
--module(zimad_app).
+-module(webservice_app).
 
 -behaviour(application).
 
@@ -14,14 +14,13 @@
 start(_StartType, _StartArgs) ->
     Dispatch = cowboy_router:compile([
         {'_', [
-            {'_', zm_rest_h, []}
+            {'_', ws_rest_h, []}
         ]}
     ]),
     {ok, _} = cowboy:start_clear(?HTTP_LISTENER, [{port, 8080}], #{
         env => #{dispatch => Dispatch}
     }),
-
-    zimad_sup:start_link().
+    webservice_sup:start_link().
 
 stop(_State) ->
     cowboy:stop_listener(?HTTP_LISTENER),

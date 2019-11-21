@@ -1,4 +1,4 @@
--module(zm_rest_h).
+-module(ws_rest_h).
 
 -export([
     init/2,
@@ -15,7 +15,7 @@
     {[<<"profile">>], [<<"GET">>, <<"HEAD">>]},
     {[<<"win_level">>], [<<"POST">>]},
     {[<<"buy_stars">>], [<<"POST">>]},
-    {[<<"gdpr_erase_profile">>], [<<"POST">>]}
+    {[<<"gdrp_erase_profile">>], [<<"POST">>]}
 ]).
 
 -type http_path() :: list(binary()).
