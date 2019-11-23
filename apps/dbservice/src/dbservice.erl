@@ -26,14 +26,10 @@ new_user(Username) when is_binary(Username) ->
         level = 0
     },
     Update = fun () ->
-        mnesia:write(User)
+        mnesia:write(User),
+        UUID
     end,
-    case mnesia:transaction(Update) of
-        {atomic, _} -> {ok, UUID};
-        _Else -> 
-            lager:error("got ~p from nesia", [_Else]),
-            {error, mnesia_error}
-    end.
+    run_transaction(Update).
 
 -spec get_auth(binary()) -> result(binary(), atom()).
 get_auth(UUID) ->
@@ -43,13 +39,14 @@ get_auth(UUID) ->
             [_] -> true
         end
     end,
-    case mnesia:transaction(Read) of
-        {atomic, true} ->
+    case run_transaction(Read) of
+        {ok, true} ->
             Claims = #{
                 uid => UUID
             },
             jwt:encode(<<"HS256">>, Claims, ?AUTH_EXP_TIME_SECONDS, ?JWT_SECRET);
-        _Else -> {error, bad_uid}
+        {ok, false} -> {error, bad_uid};
+        _Else -> _Else
     end.
 
 -spec get_profile(binary()) -> result(#?USERS_TAB{}, atom()).
@@ -60,9 +57,8 @@ get_profile(JWToken) ->
 load_profile(Claims) ->
     UUID = maps:get(<<"uid">>, Claims),
     ReadProfile = fun () ->
-        case mnesia:read(?USERS_TAB, UUID) of
-            [Profile] -> Profile
-        end
+        [Profile] = mnesia:read(?USERS_TAB, UUID),
+        Profile
     end,
     run_transaction(ReadProfile).
 
