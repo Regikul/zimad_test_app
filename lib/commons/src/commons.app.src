@@ -1,15 +1,10 @@
-{application, dbservice,
- [{description, "An OTP application"},
+{application, commons,
+ [{description, "An OTP library"},
   {vsn, "0.1.0"},
   {registered, []},
-  {mod, {dbservice_app, []}},
   {applications,
    [kernel,
-    stdlib,
-    lager,
-    uuid,
-    commons,
-    jwt
+    stdlib
    ]},
   {env,[]},
   {modules, []},
