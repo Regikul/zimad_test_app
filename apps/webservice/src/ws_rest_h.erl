@@ -91,10 +91,14 @@ make_reg(Req, State) ->
     Json = get_req_data(Body),
     lager:info("got body ~p", [Json]),
     Nick = maps:get(<<"nickname">>, Json),
-    {ok, UUID} = dbservice:new_user(Nick),
-    Created = #{<<"uid">> => UUID},
-    Req1 = cowboy_req:set_resp_body(mk_resp_body(Created), Req0),
-    {true, Req1, State}.
+    case dbservice:new_user(Nick) of
+        {ok, UUID} ->
+            Created = #{<<"uid">> => UUID},
+            Req1 = cowboy_req:set_resp_body(mk_resp_body(Created), Req0),
+            {true, Req1, State};
+        {error, _} ->
+            datastore_fault(Req0, State)
+    end.
 
 -spec make_auth(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
 make_auth(Req, State) ->
@@ -109,7 +113,9 @@ make_auth(Req, State) ->
             Req1 = cowboy_req:set_resp_body(mk_resp_body(Auth), Req0),
             {true, Req1, State};
         {ok, false} ->
-            mk_err_body(<<"bad uid">>, Req0, State)
+            mk_err_body(<<"bad uid">>, Req0, State);
+        {error, _} ->
+            datastore_fault(Req0, State)
     end.
 
 -spec get_profile(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
@@ -120,16 +126,20 @@ load_profile(Req, State) ->
     Claims = get_claims(Req),
     UUID = maps:get(<<"uid">>, Claims),
     lager:info("loking for profile with UUID(~s)", [UUID]),
-    {ok, Profile} = dbservice:get_profile(UUID),
-    JProfile = #{
-        <<"uid">> => element(2, Profile),
-        <<"nickname">> => element(3, Profile),
-        <<"coins">> => element(4, Profile),
-        <<"stars">> => element(5, Profile),
-        <<"level">> => element(6, Profile)
-    },
-    lager:info("got profile: ~p", [JProfile]),
-    {mk_resp_body(JProfile), Req, State}.
+    case dbservice:get_profile(UUID) of
+        {ok, Profile} ->
+            JProfile = #{
+                <<"uid">> => element(2, Profile),
+                <<"nickname">> => element(3, Profile),
+                <<"coins">> => element(4, Profile),
+                <<"stars">> => element(5, Profile),
+                <<"level">> => element(6, Profile)
+            },
+            lager:info("got profile: ~p", [JProfile]),
+            {mk_resp_body(JProfile), Req, State};
+        {error, _} ->
+            mk_err_body(<<"datastore fault">>, Req, State)
+    end.
 
 -spec update_wins(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
 update_wins(Req, State) ->
@@ -140,12 +150,16 @@ inc_win(Req, State) ->
     Claims = get_claims(Req),
     UUID = maps:get(<<"uid">>, Claims),
     lager:info("updating win_level of UUID(~s)", [UUID]),
-    {ok, NewWins} = dbservice:win_level(UUID),
-    Response = #{
-        <<"wins_count">> => NewWins
-    },
-    NewReq = cowboy_req:set_resp_body(mk_resp_body(Response), Req),
-    {true, NewReq, State}.
+    case dbservice:win_level(UUID) of
+        {ok, NewWins} ->
+            Response = #{
+                <<"wins_count">> => NewWins
+            },
+            NewReq = cowboy_req:set_resp_body(mk_resp_body(Response), Req),
+            {true, NewReq, State};
+        {error, _} ->
+            datastore_fault(Req, State)
+    end.
 
 -spec update_stars(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
 update_stars(Req, State) ->
@@ -159,13 +173,17 @@ add_stars(Req, State) ->
     ReqJson = get_req_data(Body),
     Stars = maps:get(<<"stars_count">>, ReqJson),
     lager:info("updating stars for UUID(~s)", [UUID]),
-    {ok, NewStars} = dbservice:buy_stars(UUID, Stars),
-    lager:info("got new stars count: ~p", [NewStars]),
-    Response = #{
-        <<"stars_count">> => NewStars
-    },
-    NewReq = cowboy_req:set_resp_body(mk_resp_body(Response), Req0),
-    {true, NewReq, State}.
+    case dbservice:buy_stars(UUID, Stars) of
+        {ok, NewStars} ->
+            lager:info("got new stars count: ~p", [NewStars]),
+            Response = #{
+                <<"stars_count">> => NewStars
+            },
+            NewReq = cowboy_req:set_resp_body(mk_resp_body(Response), Req0),
+            {true, NewReq, State};
+        {error, _} ->
+            datastore_fault(Req, State)
+    end.
 
 -spec erase_profile(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
 erase_profile(Req, State) ->
@@ -176,9 +194,13 @@ gdrp_delete(Req, State) ->
     Claims = get_claims(Req),
     UUID = maps:get(<<"uid">>, Claims),
     lager:info("trying to delete profile with UUID(~s) by GDRP request", [UUID]),
-    {ok, _} = dbservice:gdrp_erase_profile(UUID),
-    NewReq = cowboy_req:set_resp_body(mk_resp_body(#{}), Req),
-    {true, NewReq, State}.
+    case dbservice:gdrp_erase_profile(UUID) of
+        {ok, _} ->
+            NewReq = cowboy_req:set_resp_body(mk_resp_body(#{}), Req),
+            {true, NewReq, State};
+        {error, _} ->
+            datastore_fault(Req, State)
+    end.
 
 -spec get_body_data(cowboy_req:req()) -> {binary(), cowboy_req:req()}.
 get_body_data(Req) ->
@@ -245,3 +267,7 @@ with_auth_token(Req, State, Handler) ->
             mk_err_body(<<"invalid signature">>, Req, State);
         {ok, _Claims} -> Handler(Req, State)
     end.
+
+-spec datastore_fault(cowboy_req:req(), term()) -> {false, cowboy_req:req(), term()}.
+datastore_fault(Req, State) ->
+    mk_err_body(<<"datastore fault">>, Req, State).
