@@ -8,8 +8,7 @@
     stdlib,
     lager,
     uuid,
-    commons,
-    jwt
+    commons
    ]},
   {env,[]},
   {modules, []},

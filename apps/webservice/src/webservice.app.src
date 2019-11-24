@@ -7,7 +7,9 @@
    [kernel,
     stdlib,
     lager,
-    cowboy
+    cowboy,
+    jwt,
+    jsx
    ]},
   {env,[]},
   {modules, []},
