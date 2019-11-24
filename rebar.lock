@@ -3,7 +3,7 @@
  {<<"cowboy">>,{pkg,<<"cowboy">>,<<"2.7.0">>},0},
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.8.0">>},1},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.0">>},1},
+ {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.0">>},0},
  {<<"jwt">>,
   {git,"https://github.com/artemeff/jwt.git",
        {ref,"4ccacb87ac99e781dc367b4e6ce18f383951b3e4"}},

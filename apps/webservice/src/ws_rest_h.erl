@@ -6,11 +6,13 @@
     content_types_accepted/2,
     content_types_provided/2,
     accept_json/2, provide_json/2,
-    resource_exists/2
+    resource_exists/2,
+    gen_secret/2
 ]).
 
 -define(AUTH_EXP_TIME_SECONDS, (60*15)).
 -define(JWT_SECRET, <<"do_not_steal_this_secret">>).
+-define(ALPHABET, <<"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz">>).
 
 -define(ROUTES, [
     {[<<"registration">>],       [<<"PUT">>],             fun make_reg/2},
@@ -107,23 +109,32 @@ make_auth(Req, State) ->
     UUID = maps:get(<<"uid">>, Json),
     case dbservice:is_exists(UUID) of
         {ok, true} -> 
-            Claims = #{<<"uid">> => UUID},
-            {ok, JWT} = jwt:encode(<<"HS256">>, Claims, ?AUTH_EXP_TIME_SECONDS, ?JWT_SECRET),
-            Auth = #{<<"auth_token">> => JWT},
-            Req1 = cowboy_req:set_resp_body(mk_resp_body(Auth), Req0),
-            {true, Req1, State};
+            generate_jwt(UUID, Req0, State);
         {ok, false} ->
             mk_err_body(<<"bad uid">>, Req0, State);
         {error, _} ->
             datastore_fault(Req0, State)
     end.
 
+-spec generate_jwt(binary(), cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
+generate_jwt(UUID, Req, State) ->
+    Secret = gen_secret(8, <<>>),
+    case dbservice:set_secret(UUID, Secret) of
+        {ok, Secret} ->
+            Claims = #{<<"uid">> => UUID},
+            {ok, JWT} = jwt:encode(<<"HS256">>, Claims, ?AUTH_EXP_TIME_SECONDS, Secret),
+            Auth = #{<<"auth_token">> => JWT},
+            Req0 = cowboy_req:set_resp_body(mk_resp_body(Auth), Req),
+            {true, Req0, State};
+        {error, _} ->
+            datastore_fault(Req, State)
+    end.
+
 -spec get_profile(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
 get_profile(Req, State) ->
     with_auth_token(Req, State, fun load_profile/2).
 
-load_profile(Req, State) ->
-    Claims = get_claims(Req),
+load_profile(Req, Claims) ->
     UUID = maps:get(<<"uid">>, Claims),
     lager:info("loking for profile with UUID(~s)", [UUID]),
     case dbservice:get_profile(UUID) of
@@ -136,9 +147,9 @@ load_profile(Req, State) ->
                 <<"level">> => element(6, Profile)
             },
             lager:info("got profile: ~p", [JProfile]),
-            {mk_resp_body(JProfile), Req, State};
+            {mk_resp_body(JProfile), Req, Claims};
         {error, _} ->
-            mk_err_body(<<"datastore fault">>, Req, State)
+            mk_err_body(<<"datastore fault">>, Req, Claims)
     end.
 
 -spec update_wins(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
@@ -146,8 +157,7 @@ update_wins(Req, State) ->
     with_auth_token(Req, State, fun inc_win/2).
 
 -spec inc_win(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
-inc_win(Req, State) ->
-    Claims = get_claims(Req),
+inc_win(Req, Claims) ->
     UUID = maps:get(<<"uid">>, Claims),
     lager:info("updating win_level of UUID(~s)", [UUID]),
     case dbservice:win_level(UUID) of
@@ -156,9 +166,9 @@ inc_win(Req, State) ->
                 <<"wins_count">> => NewWins
             },
             NewReq = cowboy_req:set_resp_body(mk_resp_body(Response), Req),
-            {true, NewReq, State};
+            {true, NewReq, Claims};
         {error, _} ->
-            datastore_fault(Req, State)
+            datastore_fault(Req, Claims)
     end.
 
 -spec update_stars(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
@@ -166,8 +176,7 @@ update_stars(Req, State) ->
     with_auth_token(Req, State, fun add_stars/2).
 
 -spec add_stars(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
-add_stars(Req, State) ->
-    Claims = get_claims(Req),
+add_stars(Req, Claims) ->
     UUID = maps:get(<<"uid">>, Claims),
     {Body, Req0} = get_body_data(Req),
     ReqJson = get_req_data(Body),
@@ -180,9 +189,9 @@ add_stars(Req, State) ->
                 <<"stars_count">> => NewStars
             },
             NewReq = cowboy_req:set_resp_body(mk_resp_body(Response), Req0),
-            {true, NewReq, State};
+            {true, NewReq, Claims};
         {error, _} ->
-            datastore_fault(Req, State)
+            datastore_fault(Req, Claims)
     end.
 
 -spec erase_profile(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
@@ -190,16 +199,15 @@ erase_profile(Req, State) ->
     with_auth_token(Req, State, fun gdrp_delete/2).
 
 -spec gdrp_delete(cowboy_req:req(), term()) -> {boolean(), cowboy_req:req(), term()}.
-gdrp_delete(Req, State) ->
-    Claims = get_claims(Req),
+gdrp_delete(Req, Claims) ->
     UUID = maps:get(<<"uid">>, Claims),
     lager:info("trying to delete profile with UUID(~s) by GDRP request", [UUID]),
     case dbservice:gdrp_erase_profile(UUID) of
         {ok, _} ->
             NewReq = cowboy_req:set_resp_body(mk_resp_body(#{}), Req),
-            {true, NewReq, State};
+            {true, NewReq, Claims};
         {error, _} ->
-            datastore_fault(Req, State)
+            datastore_fault(Req, Claims)
     end.
 
 -spec get_body_data(cowboy_req:req()) -> {binary(), cowboy_req:req()}.
@@ -258,16 +266,41 @@ get_claims(Req) ->
 -spec with_auth_token(cowboy_req:req(), term(), http_handler(T)) -> {T, cowboy_req:req(), term()}.
 with_auth_token(Req, State, Handler) ->
     JWToken = get_auth_token(Req),
-    case jwt:decode(JWToken, ?JWT_SECRET) of
+    Secret = get_secret_for_jwt(JWToken),
+    case Secret =/= undefined andalso jwt:decode(JWToken, Secret) of
+        false -> 
+            mk_err_body(<<"can not check auth token">>, Req, State);
         {error, expired} -> 
             mk_err_body(<<"token expired">>, Req, State);
         {error, invalid_token} ->
             mk_err_body(<<"invalid token">>, Req, State);
         {error, invalid_signature} ->
             mk_err_body(<<"invalid signature">>, Req, State);
-        {ok, _Claims} -> Handler(Req, State)
+        {ok, Claims} -> Handler(Req, Claims)
+    end.
+
+-spec get_secret_for_jwt(binary()) -> binary() | undefined.
+get_secret_for_jwt(JWT) ->
+    UUID = case binary:split(JWT, <<".">>, [global, trim_all]) of
+        [_Header, Claims64, _Signature] ->
+            JSON = base64:decode(Claims64),
+            JObj = jsx:decode(JSON, [return_maps]),
+            maps:get(<<"uid">>, JObj);
+        _Else -> undefined
+    end,
+    case UUID =/= undefined andalso dbservice:get_secret(UUID) of
+        {ok, S} -> S;
+        _Otherwise -> undefined
     end.
 
 -spec datastore_fault(cowboy_req:req(), term()) -> {false, cowboy_req:req(), term()}.
 datastore_fault(Req, State) ->
     mk_err_body(<<"datastore fault">>, Req, State).
+
+-spec gen_secret(pos_integer(), binary()) -> binary().
+gen_secret(Length, Acc) when Length =:= 0 ->
+    Acc;
+gen_secret(Length, Acc) when Length > 0 ->
+    Index = rand:uniform(byte_size(?ALPHABET)) - 1,
+    Char = binary:at(?ALPHABET, Index),
+    gen_secret(Length - 1, <<Acc/binary, Char>>).

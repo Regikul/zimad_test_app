@@ -8,7 +8,8 @@
     get_profile/1,
     win_level/1,
     buy_stars/2,
-    gdrp_erase_profile/1
+    gdrp_erase_profile/1,
+    get_secret/1, set_secret/2
 ]).
 
 -type result(A, B) :: {ok, A} | {error, B}.
@@ -76,6 +77,27 @@ gdrp_erase_profile(UUID) ->
     end,
     run_transaction(EraseProfile).
 
+-spec get_secret(binary()) -> binary().
+get_secret(UUID) ->
+    GetSecret = fun () ->
+        [Profile] = mnesia:read(?USERS_TAB, UUID),
+        case Profile#?USERS_TAB.secret of
+            undefined -> mnesia:abort(no_secret);
+            Secret -> Secret
+        end
+    end,
+    run_transaction(GetSecret).
+
+-spec set_secret(binary(), binary() | undefined) -> binary().
+set_secret(UUID, NewSecret) ->
+    SetSecret = fun () ->
+        mnesia:write_lock_table(?USERS_TAB),
+        [Profile] = mnesia:read(?USERS_TAB, UUID),
+        mnesia:write(Profile#?USERS_TAB{secret = NewSecret}),
+        NewSecret
+    end,
+    run_transaction(SetSecret).
+
 -spec run_transaction(fun()) -> result(term(), term()).
 run_transaction(Fun) ->
     case mnesia:transaction(Fun) of
@@ -87,3 +109,4 @@ run_transaction(Fun) ->
             lager:error("error on mnesia ~p", [Error]),
             {error, Error}
     end.
+
