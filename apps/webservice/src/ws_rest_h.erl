@@ -253,15 +253,6 @@ mk_err_body(Reason, Req, State) ->
 get_auth_token(Req) ->
     cowboy_req:header(<<"x-auth-token">>, Req).
 
--spec get_claims(cowboy_req:req()) -> binary() | undefined.
-get_claims(Req) ->
-    JWT = cowboy_req:header(<<"x-auth-token">>, Req),
-    case jwt:decode(JWT, ?JWT_SECRET) of
-        {ok, Claims} -> Claims;
-        _Else -> undefined
-    end.
-
-
 -type http_handler(T) :: fun( (cowboy_req:req(), term()) -> {T, cowboy_req:req(), term()}).
 -spec with_auth_token(cowboy_req:req(), term(), http_handler(T)) -> {T, cowboy_req:req(), term()}.
 with_auth_token(Req, State, Handler) ->
